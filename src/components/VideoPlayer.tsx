@@ -19,6 +19,7 @@ export const VideoPlayer = ({ stream, onClose }: VideoPlayerProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [hasShownError, setHasShownError] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -46,11 +47,16 @@ export const VideoPlayer = ({ stream, onClose }: VideoPlayerProps) => {
           hls.on(Hls.Events.ERROR, (event, data) => {
             console.error('HLS Error:', data);
             setIsLoading(false);
-            toast({
-              title: "Streaming Error",
-              description: "Failed to load HLS stream. Please try another video.",
-              variant: "destructive",
-            });
+            
+            // Only show error toast once and only for fatal errors
+            if (data.fatal && !hasShownError) {
+              setHasShownError(true);
+              toast({
+                title: "Streaming Error",
+                description: "Failed to load HLS stream. Please try another video.",
+                variant: "destructive",
+              });
+            }
           });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
           // Native HLS support (Safari)
