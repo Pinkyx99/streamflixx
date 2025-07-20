@@ -51,11 +51,19 @@ export const VideoPlayer = ({ stream, onClose }: VideoPlayerProps) => {
             // Only show error toast once and only for fatal errors
             if (data.fatal && !hasShownError) {
               setHasShownError(true);
-              toast({
-                title: "Streaming Error",
-                description: "Failed to load HLS stream. Please try another video.",
-                variant: "destructive",
-              });
+              
+              // Try to fall back to direct video src if HLS fails
+              if (data.type === 'networkError') {
+                console.log('Trying fallback to direct video source...');
+                video.src = stream.stream;
+                video.load();
+              } else {
+                toast({
+                  title: "Streaming Error",
+                  description: "Failed to load HLS stream. Please try another video.",
+                  variant: "destructive",
+                });
+              }
             }
           });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
