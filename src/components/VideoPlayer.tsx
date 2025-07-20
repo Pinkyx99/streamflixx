@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Stream } from '@/types/stream';
 import { Button } from '@/components/ui/button';
 import { X, Play, Pause, Volume2, VolumeX, SkipBack, SkipForward } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import Hls from 'hls.js';
+import ReactHlsPlayer from 'react-hls-player';
 
 interface VideoPlayerProps {
   stream: Stream;
@@ -11,153 +11,17 @@ interface VideoPlayerProps {
 }
 
 export const VideoPlayer = ({ stream, onClose }: VideoPlayerProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const playerRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [hasShownError, setHasShownError] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    // Initialize HLS.js for m3u8 streams
-    const initializePlayer = () => {
-      if (stream.stream.includes('.m3u8')) {
-        if (Hls.isSupported()) {
-          const hls = new Hls({
-            enableWorker: false,
-            lowLatencyMode: true,
-            backBufferLength: 90
-          });
-          hlsRef.current = hls;
-          
-          hls.loadSource(stream.stream);
-          hls.attachMedia(video);
-          
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            setIsLoading(false);
-          });
-          
-          hls.on(Hls.Events.ERROR, (event, data) => {
-            console.error('HLS Error:', data);
-            setIsLoading(false);
-            
-            // Only show error toast once and only for fatal errors
-            if (data.fatal && !hasShownError) {
-              setHasShownError(true);
-              
-              // Try to fall back to direct video src if HLS fails
-              if (data.type === 'networkError') {
-                console.log('Trying fallback to direct video source...');
-                video.src = stream.stream;
-                video.load();
-              } else {
-                toast({
-                  title: "Streaming Error",
-                  description: "Failed to load HLS stream. Please try another video.",
-                  variant: "destructive",
-                });
-              }
-            }
-          });
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          // Native HLS support (Safari)
-          video.src = stream.stream;
-        } else {
-          toast({
-            title: "Format Not Supported",
-            description: "Your browser doesn't support HLS streaming.",
-            variant: "destructive",
-          });
-        }
-      } else {
-        // Regular video files
-        video.src = stream.stream;
-      }
-    };
-
-    const handleCanPlay = () => {
-      setIsLoading(false);
-    };
-
-    const handleError = () => {
-      setIsLoading(false);
-      toast({
-        title: "Playback Error",
-        description: "Unable to load this video. Please try another stream.",
-        variant: "destructive",
-      });
-    };
-
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-    const handleTimeUpdate = () => setCurrentTime(video.currentTime);
-    const handleDurationChange = () => setDuration(video.duration);
-
-    video.addEventListener('canplay', handleCanPlay);
-    video.addEventListener('error', handleError);
-    video.addEventListener('play', handlePlay);
-    video.addEventListener('pause', handlePause);
-    video.addEventListener('timeupdate', handleTimeUpdate);
-    video.addEventListener('durationchange', handleDurationChange);
-
-    initializePlayer();
-
-    // Auto-hide controls
-    let controlsTimeout: NodeJS.Timeout;
-    const resetControlsTimer = () => {
-      setShowControls(true);
-      clearTimeout(controlsTimeout);
-      controlsTimeout = setTimeout(() => {
-        if (isPlaying) setShowControls(false);
-      }, 3000);
-    };
-
-    const handleMouseMove = () => resetControlsTimer();
-    const handleKeyDown = (e: KeyboardEvent) => {
-      e.preventDefault();
-      switch (e.code) {
-        case 'Space':
-          togglePlay();
-          break;
-        case 'Escape':
-          onClose();
-          break;
-        case 'KeyM':
-          toggleMute();
-          break;
-      }
-      resetControlsTimer();
-    };
-
-    video.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('keydown', handleKeyDown);
-    resetControlsTimer();
-
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
-      video.removeEventListener('canplay', handleCanPlay);
-      video.removeEventListener('error', handleError);
-      video.removeEventListener('play', handlePlay);
-      video.removeEventListener('pause', handlePause);
-      video.removeEventListener('timeupdate', handleTimeUpdate);
-      video.removeEventListener('durationchange', handleDurationChange);
-      video.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('keydown', handleKeyDown);
-      clearTimeout(controlsTimeout);
-    };
-  }, [stream.stream, isPlaying, onClose, toast]);
-
   const togglePlay = () => {
-    const video = videoRef.current;
+    const video = playerRef.current;
     if (!video) return;
 
     if (isPlaying) {
@@ -174,7 +38,7 @@ export const VideoPlayer = ({ stream, onClose }: VideoPlayerProps) => {
   };
 
   const toggleMute = () => {
-    const video = videoRef.current;
+    const video = playerRef.current;
     if (!video) return;
     
     video.muted = !video.muted;
@@ -182,7 +46,7 @@ export const VideoPlayer = ({ stream, onClose }: VideoPlayerProps) => {
   };
 
   const seek = (time: number) => {
-    const video = videoRef.current;
+    const video = playerRef.current;
     if (!video) return;
     video.currentTime = time;
   };
@@ -193,16 +57,74 @@ export const VideoPlayer = ({ stream, onClose }: VideoPlayerProps) => {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  const handleCanPlay = () => {
+    setIsLoading(false);
+  };
+
+  const handleError = () => {
+    setIsLoading(false);
+    toast({
+      title: "Playback Error",
+      description: "Unable to load this video. Please try another stream.",
+      variant: "destructive",
+    });
+  };
+
+  const handlePlay = () => setIsPlaying(true);
+  const handlePause = () => setIsPlaying(false);
+  const handleTimeUpdate = () => {
+    if (playerRef.current) {
+      setCurrentTime(playerRef.current.currentTime);
+    }
+  };
+  const handleDurationChange = () => {
+    if (playerRef.current) {
+      setDuration(playerRef.current.duration);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    e.preventDefault();
+    switch (e.code) {
+      case 'Space':
+        togglePlay();
+        break;
+      case 'Escape':
+        onClose();
+        break;
+      case 'KeyM':
+        toggleMute();
+        break;
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black animate-slide-up">
-      {/* Video */}
-      <video
-        ref={videoRef}
+    <div 
+      className="fixed inset-0 z-50 bg-black animate-slide-up"
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+    >
+      {/* Video Player */}
+      <ReactHlsPlayer
+        playerRef={playerRef}
         src={stream.stream}
-        className="w-full h-full object-contain"
         autoPlay
-        playsInline
+        controls={false}
+        className="w-full h-full object-contain"
+        onCanPlay={handleCanPlay}
+        onError={handleError}
+        onPlay={handlePlay}
+        onPause={handlePause}
+        onTimeUpdate={handleTimeUpdate}
+        onDurationChange={handleDurationChange}
         onClick={() => setShowControls(!showControls)}
+        hlsConfig={{
+          enableWorker: false,
+          lowLatencyMode: true,
+          backBufferLength: 90,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 600,
+        }}
       />
 
       {/* Loading overlay */}
